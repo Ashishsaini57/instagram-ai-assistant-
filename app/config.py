@@ -51,6 +51,17 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
     openai_max_output_tokens: int = Field(default=200, ge=16, le=2000)
     openai_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
+    openai_daily_limit: int = Field(default=300, ge=0)
+
+    # AI reply drafting
+    ai_processing_enabled: bool = True
+    ai_min_confidence: float = Field(default=0.5, ge=0, le=1)
+    creator_name: str = "Creator"
+    creator_persona: str = "A friendly Instagram creator who replies warmly and briefly."
+    reply_emoji_allowed: bool = True
+    reply_mention_username: bool = False
+    dm_offer_text: str = ""
+    blocked_words: str = ""
 
     # Dashboard
     dashboard_username: str = "admin"
@@ -68,6 +79,10 @@ class Settings(BaseSettings):
     @property
     def openai_configured(self) -> bool:
         return self.openai_api_key is not None
+
+    @property
+    def blocked_words_list(self) -> list[str]:
+        return [w.strip().lower() for w in self.blocked_words.split(",") if w.strip()]
 
     @property
     def can_send_to_instagram(self) -> bool:
