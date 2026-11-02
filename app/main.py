@@ -6,12 +6,14 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import sessionmaker
 
 from app import __version__
 from app.ai.client import get_reply_generator
 from app.config import Settings, get_settings
 from app.db import create_db_engine, init_db
+from app.instagram.sender import InstagramSender
 from app.webhooks import router as webhook_router
 
 
@@ -31,7 +33,10 @@ def create_app() -> FastAPI:
     app.state.engine = engine
     app.state.session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     app.state.reply_generator = get_reply_generator(settings)
+    app.state.sender = InstagramSender(settings)
     app.include_router(webhook_router)
+    # Public image folder for DM attachments (Instagram must be able to fetch these URLs).
+    app.mount("/media", StaticFiles(directory=settings.media_dir, check_dir=False), name="media")
 
     @app.get("/health")
     def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict:
@@ -47,6 +52,7 @@ def create_app() -> FastAPI:
             "meta_configured": settings.meta_configured,
             "instagram_configured": settings.instagram_configured,
             "openai_configured": settings.openai_configured,
+            "public_base_url_configured": settings.public_base_url is not None,
         }
 
     return app

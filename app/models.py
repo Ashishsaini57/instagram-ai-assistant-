@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -13,17 +13,43 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def as_utc(value: datetime) -> datetime:
+    """SQLite returns naive datetimes; treat them as UTC."""
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
 class CommentStatus(StrEnum):
     NEW = "new"
     IGNORED_SELF = "ignored_self"
     PENDING_REVIEW = "pending_review"
     SKIPPED = "skipped"
     FAILED = "failed"
+    REPLIED = "replied"
+    DRY_RUN = "dry_run"
+    REJECTED = "rejected"
 
 
 class DraftStatus(StrEnum):
     PENDING_REVIEW = "pending_review"
     SKIPPED = "skipped"
+    FAILED = "failed"
+    POSTED = "posted"
+    DRY_RUN = "dry_run"
+    REJECTED = "rejected"
+    SEND_FAILED = "send_failed"
+
+
+class ActionKind(StrEnum):
+    COMMENT_REPLY = "comment_reply"
+    PRIVATE_REPLY = "private_reply"
+    DM_TEXT = "dm_text"
+    DM_IMAGE = "dm_image"
+
+
+class SendStatus(StrEnum):
+    SENT = "sent"
+    DRY_RUN = "dry_run"
+    BLOCKED = "blocked"
     FAILED = "failed"
 
 
@@ -96,4 +122,35 @@ class ReplyDraft(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class OutboundAction(Base):
+    """Audit log of every attempted send (sent, dry-run, blocked or failed)."""
+
+    __tablename__ = "outbound_actions"
+    __table_args__ = (
+        # Meta allows one private reply per comment.
+        Index(
+            "uq_private_reply_per_comment",
+            "comment_id",
+            unique=True,
+            sqlite_where=text("kind = 'private_reply' AND status IN ('sent', 'dry_run')"),
+            postgresql_where=text("kind = 'private_reply' AND status IN ('sent', 'dry_run')"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    comment_id: Mapped[int | None] = mapped_column(ForeignKey("comments.id"), index=True)
+    draft_id: Mapped[int | None] = mapped_column(ForeignKey("reply_drafts.id"))
+    recipient_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    text: Mapped[str | None] = mapped_column(Text)
+    image_url: Mapped[str | None] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(String(64))
+    ig_response_id: Mapped[str | None] = mapped_column(String(255))
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
     )

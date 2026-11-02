@@ -3,7 +3,8 @@
 import re
 import unicodedata
 
-_URL = re.compile(r"(https?://|www\.|\b[\w-]+\.(com|in|net|org|io|xyz|ly|me)\b)", re.IGNORECASE)
+from app.text_rules import contains_link
+
 _REPEATED = re.compile(r"(.)\1{9,}")
 
 
@@ -24,7 +25,7 @@ def prefilter_reason(text: str, blocked_words: list[str]) -> str | None:
         return "empty"
     if _is_emoji_or_symbols_only(stripped):
         return "emoji_only"
-    if _URL.search(stripped):
+    if contains_link(stripped):
         return "contains_link"
     if _REPEATED.search(stripped):
         return "repeated_characters"

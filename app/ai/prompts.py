@@ -4,9 +4,9 @@ import json
 
 from app.ai.schemas import CommentInput
 from app.config import Settings
+from app.text_rules import MAX_REPLY_CHARS
 
 MAX_COMMENT_CHARS = 500
-MAX_REPLY_CHARS = 300
 
 
 def build_system_prompt(settings: Settings) -> str:
