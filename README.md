@@ -4,9 +4,10 @@ AI-powered comment and DM automation for an Instagram **Creator** account, built
 **official Meta Instagram API** (Instagram API with Instagram Login) and webhooks. No unofficial
 login, scraping or password-based libraries are used.
 
-> **Status: Step 3 — AI reply drafts.** Signed webhooks are stored, and each new comment is
-> classified and given a draft reply in the review queue. Nothing is posted or sent yet; sending
-> and the dashboard come in later steps.
+> **Status: Step 4 — sending layer.** Signed webhooks are stored, each new comment gets an AI
+> draft in the review queue, and approved drafts go through a single safety gate to the official
+> Instagram API. With `DRY_RUN=true` (the default) nothing is sent — actions are only recorded.
+> The dashboard comes in Step 5.
 
 ## Planned features
 
@@ -122,6 +123,39 @@ Cost controls: one short call per comment, `OPENAI_MAX_OUTPUT_TOKENS`, and `OPEN
 Without `OPENAI_API_KEY` a free offline stub generates simple drafts so the whole flow works
 locally. Tests never call OpenAI.
 
+## Sending layer (`app/instagram/`, `app/actions.py`)
+
+| Action | Official endpoint | Rules enforced before sending |
+| --- | --- | --- |
+| Public comment reply | `POST /{comment-id}/replies` | non-empty, ≤ 300 chars, no links, never on your own comments |
+| Private reply (DM to commenter) | `POST /{ig-user-id}/messages` `recipient.comment_id` | **one per comment**, within **7 days** of the comment |
+| Text DM | `POST /{ig-user-id}/messages` `recipient.id` | user messaged you within the last **24 hours** |
+| Image DM | same, `attachment.type=image` | 24-hour window + public **https** URL (no localhost/private IPs) |
+
+Every send goes through `InstagramSender`, which checks the rules, then the gate
+`Settings.can_send_to_instagram` (`DRY_RUN=false` **and** credentials set). Otherwise the action
+is recorded with status `dry_run` and **no network call is made**. Every attempt is logged in
+`outbound_actions` (`sent` / `dry_run` / `blocked` / `failed`). The token is sent only in the
+`Authorization` header and is scrubbed from error messages.
+
+Review queue from the command line (until the dashboard exists):
+
+```bash
+python scripts/review.py list
+python scripts/review.py approve 3 --dm          # reply + private-reply DM (dry-run by default)
+python scripts/review.py approve 3 --text "Shukriya! 🙏"
+python scripts/review.py reject 4
+python scripts/review.py actions                 # what was (or would have been) sent
+```
+
+Automatic mode (`AUTO_REPLY_ENABLED=true`, requires `REVIEW_QUEUE_ENABLED=false`) approves
+drafts as they are created, skipping low-confidence ones; `AUTO_DM_ENABLED=true` additionally
+sends the suggested private reply. Both still pass through the same gate and rules.
+
+**Images:** put files in `media/` and set `PUBLIC_BASE_URL`; they are served publicly at
+`$PUBLIC_BASE_URL/media/<file>` so Instagram can fetch them. Any other public https image URL
+works too.
+
 ## Meta / Instagram setup
 
 Not required yet. When you are ready to connect a real account, follow
@@ -137,6 +171,8 @@ app/
   security.py # webhook signature + verify-token checks
   webhooks.py # GET/POST /webhook
   ai/         # prefilter, prompts, OpenAI/offline generators, draft pipeline
+  instagram/  # Graph API client, safety-gated sender, image URL checks
+  actions.py  # approve / reject drafts, automatic mode
   main.py     # FastAPI app (/health)
 scripts/      # local dev helpers (fake signed webhooks, show stored data)
 tests/        # pytest suite (no network, no real credentials)

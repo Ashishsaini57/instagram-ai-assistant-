@@ -16,6 +16,8 @@ htmlcov/
 
 # Local data
 data/
+media/*
+!media/.gitkeep
 *.db
 *.sqlite3
 

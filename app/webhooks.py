@@ -83,6 +83,7 @@ async def receive_webhook(
             settings,
             request.app.state.reply_generator,
             new_comment_ids,
+            request.app.state.sender,
         )
     return {"status": "ok", **result}
 

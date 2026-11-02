@@ -41,6 +41,9 @@ Request these permissions:
 | `instagram_business_manage_comments` | Read comments, reply to comments |
 | `instagram_business_manage_messages` | Private replies and DMs (including images) |
 
+Not needed: `instagram_business_content_publish` (the app never publishes posts) and the
+`HUMAN_AGENT` message tag (the app stays within the standard 24-hour window).
+
 ## 5. Webhooks
 
 1. Pick a long random string and set it as `META_WEBHOOK_VERIFY_TOKEN`

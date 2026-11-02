@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     # Instagram account
     instagram_user_id: str | None = None
     instagram_access_token: SecretStr | None = None
+    instagram_request_timeout_seconds: float = Field(default=15.0, gt=0, le=60)
+
+    # Public URL of this app (https) — used to build image URLs for DMs from MEDIA_DIR
+    public_base_url: str | None = None
+    media_dir: str = "./media"
 
     # OpenAI
     openai_api_key: SecretStr | None = None
@@ -94,6 +99,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate(self) -> "Settings":
+        if self.public_base_url:
+            if not self.public_base_url.startswith("https://"):
+                raise ValueError("PUBLIC_BASE_URL must start with https://")
+            self.public_base_url = self.public_base_url.rstrip("/")
         if self.auto_reply_enabled and self.review_queue_enabled:
             raise ValueError(
                 "AUTO_REPLY_ENABLED and REVIEW_QUEUE_ENABLED cannot both be true; "

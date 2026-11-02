@@ -4,21 +4,23 @@ import logging
 import re
 from collections.abc import Iterable
 from datetime import UTC, datetime, time
+from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.ai.client import ReplyGenerator
 from app.ai.prefilter import prefilter_reason
-from app.ai.prompts import MAX_REPLY_CHARS
 from app.ai.schemas import AIReplyResult, CommentInput, Intent
 from app.config import Settings
 from app.models import Comment, CommentStatus, DraftStatus, ReplyDraft
+from app.text_rules import dm_problem, reply_problem
+
+if TYPE_CHECKING:
+    from app.instagram.sender import InstagramSender
 
 logger = logging.getLogger(__name__)
 
-MAX_DM_CHARS = 1000
-_URL = re.compile(r"(https?://|www\.|\b[\w-]+\.(com|in|net|org|io|xyz|ly|me)\b)", re.IGNORECASE)
 _EMOJI = re.compile(
     "[\U0001f000-\U0001faff\U00002600-\U000027bf\U0001f900-\U0001f9ff\ufe0f\u200d]+"
 )
@@ -52,17 +54,16 @@ def apply_rules(result: AIReplyResult, comment: Comment, settings: Settings) -> 
     reply = result.reply_text.strip()
     if not settings.reply_emoji_allowed:
         reply = re.sub(r"\s{2,}", " ", _EMOJI.sub("", reply)).strip()
-    if not reply or len(reply) > MAX_REPLY_CHARS or _URL.search(reply):
+    if reply_problem(reply):
         return {**fields, "status": DraftStatus.FAILED, "error": "Reply failed safety checks"}
     if settings.reply_mention_username and comment.from_username:
         reply = f"@{comment.from_username} {reply}"
     fields["reply_text"] = reply
 
     dm = (result.dm_text or "").strip()
-    if result.suggest_dm and result.intent in _DM_INTENTS and dm and len(dm) <= MAX_DM_CHARS:
-        if not _URL.search(dm):
-            fields["suggest_dm"] = True
-            fields["dm_text"] = dm
+    if result.suggest_dm and result.intent in _DM_INTENTS and not dm_problem(dm):
+        fields["suggest_dm"] = True
+        fields["dm_text"] = dm
     return {**fields, "status": DraftStatus.PENDING_REVIEW}
 
 
@@ -128,14 +129,25 @@ def process_comments(
     settings: Settings,
     generator: ReplyGenerator,
     comment_ids: Iterable[int] | None = None,
+    sender: "InstagramSender | None" = None,
 ) -> int:
-    """Process the given comments (or all NEW ones). Returns number of drafts created."""
+    """Process the given comments (or all NEW ones). Returns number of drafts created.
+
+    If a sender is given and automatic mode is enabled, eligible drafts are approved
+    immediately (still subject to the DRY_RUN gate and all safety checks).
+    """
+    from app.actions import auto_handle_draft
+
     created = 0
     with session_factory() as db:
         query = select(Comment).where(Comment.status == CommentStatus.NEW).order_by(Comment.id)
         if comment_ids is not None:
             query = query.where(Comment.id.in_(list(comment_ids)))
         for comment in db.scalars(query).all():
-            if process_comment(db, comment, settings, generator) is not None:
-                created += 1
+            draft = process_comment(db, comment, settings, generator)
+            if draft is None:
+                continue
+            created += 1
+            if sender is not None:
+                auto_handle_draft(db, draft, settings, sender)
     return created
