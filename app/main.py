@@ -1,19 +1,35 @@
 """FastAPI application entrypoint."""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
+from sqlalchemy.orm import sessionmaker
 
 from app import __version__
 from app.config import Settings, get_settings
+from app.db import create_db_engine, init_db
+from app.webhooks import router as webhook_router
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
     logging.basicConfig(level=settings.log_level.upper())
 
-    app = FastAPI(title="Instagram AI Assistant", version=__version__)
+    engine = create_db_engine(settings.database_url)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        init_db(engine)
+        yield
+        engine.dispose()
+
+    app = FastAPI(title="Instagram AI Assistant", version=__version__, lifespan=lifespan)
+    app.state.engine = engine
+    app.state.session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    app.include_router(webhook_router)
 
     @app.get("/health")
     def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict:
