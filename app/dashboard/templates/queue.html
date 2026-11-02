@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Review queue{% endblock %}
+{% block content %}
+<h1>Review queue</h1>
+<p class="tabs">
+  <a href="/dashboard?view=pending" class="{{ 'on' if view == 'pending' }}">Waiting for review ({{ counts.pending }})</a>
+  <a href="/dashboard?view=dry_run" class="{{ 'on' if view == 'dry_run' }}">Approved in dry run ({{ counts.dry_run }})</a>
+</p>
+{% if not items %}
+<p class="muted">Nothing here. New comments appear automatically when Instagram sends them.</p>
+{% endif %}
+{% for item in items %}
+{% set d = item.draft %}{% set c = item.comment %}
+<article class="card">
+  <header>
+    <strong>@{{ c.from_username or c.from_id or "unknown" }}</strong>
+    <span class="muted">on a {{ "reel" if c.media_product_type == "REELS" else "post" }} · {{ fmt(c.created_at) }}</span>
+    <span class="tag">{{ d.intent or "?" }}</span>
+    <span class="tag">{{ d.language or "?" }}</span>
+    {% if d.confidence is not none %}<span class="tag">confidence {{ "%.0f" | format(d.confidence * 100) }}%</span>{% endif %}
+    {% if d.low_confidence %}<span class="tag warn">LOW CONFIDENCE — check carefully</span>{% endif %}
+    {% if d.status != "pending_review" %}<span class="tag">{{ d.status }}</span>{% endif %}
+  </header>
+  <blockquote>{{ c.text }}</blockquote>
+  <form method="post" action="/dashboard/drafts/{{ d.id }}/approve">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Public reply (max 300 characters, no links)
+      <textarea name="reply_text" maxlength="300" rows="2">{{ d.reply_text or "" }}</textarea>
+    </label>
+    <label>Private reply DM (optional, one per comment, max 1000 characters)
+      <textarea name="dm_text" maxlength="1000" rows="2">{{ d.dm_text or "" }}</textarea>
+    </label>
+    <p class="muted small">{{ item.dm_state }}</p>
+    <div class="buttons">
+      <button type="submit" class="primary">Approve reply</button>
+      <button type="submit" name="send_dm" value="1" {{ "disabled" if not item.dm_ok }}>Approve reply + send DM</button>
+      <button type="submit" class="danger" formaction="/dashboard/drafts/{{ d.id }}/reject">Reject</button>
+    </div>
+  </form>
+</article>
+{% endfor %}
+{% endblock %}

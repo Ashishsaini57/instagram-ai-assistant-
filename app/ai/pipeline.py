@@ -14,6 +14,7 @@ from app.ai.prefilter import prefilter_reason
 from app.ai.schemas import AIReplyResult, CommentInput, Intent
 from app.config import Settings
 from app.models import Comment, CommentStatus, DraftStatus, ReplyDraft
+from app.runtime_settings import effective_settings
 from app.text_rules import dm_problem, reply_problem
 
 if TYPE_CHECKING:
@@ -90,7 +91,7 @@ def process_comment(
         is_reply=comment.parent_comment_id is not None,
     )
     try:
-        output = generator.generate(comment_input)
+        output = generator.generate(comment_input, settings)
     except Exception as exc:  # any AI/network/validation failure must not crash processing
         logger.warning("AI generation failed for comment %s: %s", comment.id, type(exc).__name__)
         return _save(
@@ -140,6 +141,7 @@ def process_comments(
 
     created = 0
     with session_factory() as db:
+        settings = effective_settings(db, settings)  # apply dashboard switches/persona
         query = select(Comment).where(Comment.status == CommentStatus.NEW).order_by(Comment.id)
         if comment_ids is not None:
             query = query.where(Comment.id.in_(list(comment_ids)))

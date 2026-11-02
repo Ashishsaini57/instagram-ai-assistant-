@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<section class="card">
+  <h2>Status (from .env, read-only)</h2>
+  <table class="kv">
+    <tr><th>DRY_RUN</th><td>{% if base.dry_run %}<span class="tag ok">on — nothing is sent</span>{% else %}<span class="tag warn">off</span>{% endif %}
+      <span class="muted small">Change only in .env + restart.</span></td></tr>
+    <tr><th>Instagram account</th><td>{{ "connected" if base.instagram_configured else "not configured" }}</td></tr>
+    <tr><th>Meta webhook</th><td>{{ "configured" if base.meta_configured else "not configured" }}</td></tr>
+    <tr><th>AI</th><td>{{ ai_provider }} · model {{ base.openai_model }} · {{ ai_calls_today }}/{{ base.openai_daily_limit }} calls today</td></tr>
+    <tr><th>Public URL for images</th><td>{{ "configured" if base.public_base_url else "not set" }}</td></tr>
+    <tr><th>Version</th><td>{{ version }}</td></tr>
+  </table>
+</section>
+<form method="post" action="/dashboard/settings" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <h2>Automation switches</h2>
+  <label class="check"><input type="checkbox" name="review_queue_enabled" {{ "checked" if s.review_queue_enabled }}> Review queue (I approve every reply)</label>
+  <label class="check"><input type="checkbox" name="auto_reply_enabled" {{ "checked" if s.auto_reply_enabled }}> Automatic replies <span class="muted small">(only allowed when the review queue is off; low-confidence drafts still wait for review)</span></label>
+  <label class="check"><input type="checkbox" name="auto_dm_enabled" {{ "checked" if s.auto_dm_enabled }}> Automatic private-reply DMs <span class="muted small">(only together with automatic replies)</span></label>
+  <h2>Persona</h2>
+  <label>Creator name <input name="creator_name" maxlength="{{ limits.creator_name }}" value="{{ s.creator_name }}" required></label>
+  <label>Persona <textarea name="creator_persona" maxlength="{{ limits.creator_persona }}" rows="2">{{ s.creator_persona }}</textarea></label>
+  <label>DM offer text <textarea name="dm_offer_text" maxlength="{{ limits.dm_offer_text }}" rows="2">{{ s.dm_offer_text }}</textarea></label>
+  <label>Blocked words (comma-separated) <input name="blocked_words" maxlength="{{ limits.blocked_words }}" value="{{ s.blocked_words }}"></label>
+  <label class="check"><input type="checkbox" name="reply_emoji_allowed" {{ "checked" if s.reply_emoji_allowed }}> Emojis allowed in replies</label>
+  <button type="submit" class="primary">Save settings</button>
+</form>
+<form method="post" action="/dashboard/settings/reset">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit" class="link">Reset to .env values</button>
+</form>
+{% endblock %}

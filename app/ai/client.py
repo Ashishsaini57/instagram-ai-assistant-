@@ -23,7 +23,9 @@ class AIGenerationError(Exception):
 
 
 class ReplyGenerator(Protocol):
-    def generate(self, comment: CommentInput) -> GenerationOutput: ...
+    def generate(
+        self, comment: CommentInput, settings: Settings | None = None
+    ) -> GenerationOutput: ...
 
 
 class OpenAIReplyGenerator:
@@ -41,8 +43,9 @@ class OpenAIReplyGenerator:
             )
         self._client = client
 
-    def generate(self, comment: CommentInput) -> GenerationOutput:
-        s = self._settings
+    def generate(self, comment: CommentInput, settings: Settings | None = None) -> GenerationOutput:
+        # `settings` carries dashboard persona overrides; the API key/client never change.
+        s = settings or self._settings
         response = self._client.chat.completions.create(
             model=s.openai_model,
             messages=[
@@ -100,7 +103,7 @@ class OfflineReplyGenerator:
 
     model_name = "offline-stub"
 
-    def generate(self, comment: CommentInput) -> GenerationOutput:
+    def generate(self, comment: CommentInput, settings: Settings | None = None) -> GenerationOutput:
         text = comment.text.lower()
         words = set(re.findall(r"[a-z]+", text))
         if _DEVANAGARI.search(comment.text):

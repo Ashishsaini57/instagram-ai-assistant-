@@ -14,7 +14,7 @@ from app.models import (
     ReplyDraft,
     SendStatus,
 )
-from app.text_rules import reply_problem
+from app.text_rules import dm_problem, reply_problem
 
 # A draft that was actually posted can never be approved again.
 APPROVABLE = {DraftStatus.PENDING_REVIEW, DraftStatus.DRY_RUN, DraftStatus.SEND_FAILED}
@@ -59,6 +59,7 @@ def approve_draft(
     sender: InstagramSender,
     edited_text: str | None = None,
     send_dm: bool = False,
+    edited_dm_text: str | None = None,
 ) -> ApprovalResult:
     draft, comment = _load(db, draft_id)
     if draft.status not in APPROVABLE:
@@ -67,8 +68,13 @@ def approve_draft(
     text = (edited_text if edited_text is not None else draft.reply_text or "").strip()
     if problem := reply_problem(text):
         raise ActionError(f"Reply text is not allowed: {problem}")
-    if send_dm and not draft.dm_text:
-        raise ActionError("This draft has no DM text")
+    dm_text = (edited_dm_text if edited_dm_text is not None else draft.dm_text or "").strip()
+    if send_dm:
+        if not dm_text:
+            raise ActionError("This draft has no DM text")
+        if problem := dm_problem(dm_text):
+            raise ActionError(f"DM text is not allowed: {problem}")
+        draft.dm_text = dm_text
 
     draft.reply_text = text
     reply_action = sender.reply_to_comment(db, comment, text, draft_id=draft.id)

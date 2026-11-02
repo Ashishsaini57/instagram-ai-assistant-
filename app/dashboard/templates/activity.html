@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Activity{% endblock %}
+{% block content %}
+<h1>Activity log</h1>
+<p class="tabs">
+  <a href="/dashboard/activity" class="{{ 'on' if not status }}">All</a>
+  {% for st in statuses %}<a href="/dashboard/activity?status={{ st }}" class="{{ 'on' if status == st }}">{{ st }}</a>{% endfor %}
+</p>
+<p class="muted small">dry_run = recorded only, not sent · blocked = stopped by a safety rule · times in {{ timezone }}</p>
+{% if not actions %}<p class="muted">No activity yet.</p>{% else %}
+<div class="scroll">
+<table>
+  <thead><tr><th>Time</th><th>Action</th><th>Status</th><th>To</th><th>Content</th><th>Details</th></tr></thead>
+  <tbody>
+  {% for a in actions %}
+  {% set c = comments.get(a.comment_id) %}
+  <tr>
+    <td>{{ fmt(a.created_at) }}</td>
+    <td>{{ labels.get(a.kind, a.kind) }}</td>
+    <td><span class="tag {{ 'ok' if a.status in ('sent', 'dry_run') else 'warn' }}">{{ a.status }}</span></td>
+    <td>{% if c %}@{{ c.from_username or c.from_id }}{% else %}{{ a.recipient_id or "—" }}{% endif %}</td>
+    <td>{% if a.image_url %}<code>{{ a.image_url }}</code>{% else %}{{ a.text or "" }}{% endif %}</td>
+    <td>{{ a.reason or a.error or a.ig_response_id or "" }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

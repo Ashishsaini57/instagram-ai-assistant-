@@ -6,6 +6,7 @@ Safe defaults: DRY_RUN is on, the review queue is on, and automatic replies/DMs 
 
 from enum import StrEnum
 from functools import lru_cache
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -72,6 +73,7 @@ class Settings(BaseSettings):
     dashboard_username: str = "admin"
     dashboard_password: SecretStr | None = None
     session_secret_key: SecretStr | None = None
+    dashboard_timezone: str = "UTC"
 
     @property
     def meta_configured(self) -> bool:
@@ -99,6 +101,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate(self) -> "Settings":
+        try:
+            ZoneInfo(self.dashboard_timezone)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"Unknown DASHBOARD_TIMEZONE: {self.dashboard_timezone}") from exc
         if self.public_base_url:
             if not self.public_base_url.startswith("https://"):
                 raise ValueError("PUBLIC_BASE_URL must start with https://")
