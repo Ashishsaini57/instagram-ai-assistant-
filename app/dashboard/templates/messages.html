@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Messages{% endblock %}
+{% block content %}
+<h1>Messages</h1>
+<p class="muted">Instagram only allows DMs to people who messaged you in the last 24 hours.
+  Times are in {{ timezone }}.</p>
+{% if not conversations %}
+<p class="muted">No incoming DMs yet.</p>
+{% endif %}
+{% for conv in conversations %}
+<article class="card">
+  <header>
+    <strong>{{ "@" ~ conv.username if conv.username else "User " ~ conv.user_id }}</strong>
+    <span class="muted">last message {{ fmt(conv.last_at) }}</span>
+    {% if conv.open %}<span class="tag ok">window open — {{ conv.left }}</span>
+    {% else %}<span class="tag warn">window closed</span>{% endif %}
+  </header>
+  <blockquote>{{ conv.last.text or "(attachment)" }}</blockquote>
+  {% if conv.open %}
+  <form method="post" action="/dashboard/messages/{{ conv.user_id }}/text">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Text DM <textarea name="text" maxlength="1000" rows="2" required></textarea></label>
+    <button type="submit" class="primary">Send text</button>
+  </form>
+  <form method="post" action="/dashboard/messages/{{ conv.user_id }}/image">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="row">
+      <label>Image from media folder
+        <select name="media_file" {{ "disabled" if not public_base_url }}>
+          <option value="">—</option>
+          {% for f in media_files %}<option value="{{ f }}">{{ f }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>or public https image link <input name="image_url" type="url" placeholder="https://…"></label>
+    </div>
+    {% if not public_base_url %}<p class="muted small">Set PUBLIC_BASE_URL to send images from the media folder.</p>{% endif %}
+    <button type="submit">Send image</button>
+  </form>
+  {% else %}
+  <p class="muted small">Sending is disabled until this person messages you again.</p>
+  {% endif %}
+</article>
+{% endfor %}
+{% endblock %}

@@ -2,11 +2,13 @@
 
 import ipaddress
 import re
+from pathlib import Path
 from urllib.parse import quote, urlparse
 
 from app.config import Settings
 
 _FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,200}$")
+_IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".gif", ".webp")
 _PRIVATE_SUFFIXES = (".localhost", ".local", ".internal", ".lan", ".home", ".corp")
 
 
@@ -38,3 +40,15 @@ def public_media_url(settings: Settings, filename: str) -> str:
     if not _FILENAME_RE.match(filename) or ".." in filename:
         raise ValueError("Invalid media filename")
     return f"{settings.public_base_url}/media/{quote(filename)}"
+
+
+def list_media_images(settings: Settings) -> list[str]:
+    """Image files in MEDIA_DIR that can be offered for DMs (safe names only)."""
+    folder = Path(settings.media_dir)
+    if not folder.is_dir():
+        return []
+    return sorted(
+        f.name
+        for f in folder.iterdir()
+        if f.is_file() and f.suffix.lower() in _IMAGE_SUFFIXES and _FILENAME_RE.match(f.name)
+    )

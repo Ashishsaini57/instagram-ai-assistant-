@@ -4,10 +4,10 @@ AI-powered comment and DM automation for an Instagram **Creator** account, built
 **official Meta Instagram API** (Instagram API with Instagram Login) and webhooks. No unofficial
 login, scraping or password-based libraries are used.
 
-> **Status: Step 4 — sending layer.** Signed webhooks are stored, each new comment gets an AI
-> draft in the review queue, and approved drafts go through a single safety gate to the official
-> Instagram API. With `DRY_RUN=true` (the default) nothing is sent — actions are only recorded.
-> The dashboard comes in Step 5.
+> **Status: Step 5 — dashboard.** Signed webhooks are stored, each new comment gets an AI
+> draft in the review queue, and you approve, edit or reject drafts in a login-protected
+> dashboard. Every send goes through a single safety gate to the official Instagram API. With
+> `DRY_RUN=true` (the default) nothing is sent — actions are only recorded.
 
 ## Planned features
 
@@ -19,7 +19,7 @@ login, scraping or password-based libraries are used.
 | Post replies to comments | `POST /{comment-id}/replies` | 4 |
 | DM a commenter | Private Reply (`recipient.comment_id`) — 1 per comment, within 7 days | 4 |
 | Image DMs | `attachment.type=image` with a public HTTPS URL | 4 |
-| Dashboard: review queue, switches, logs | FastAPI + HTML | 5 |
+| Dashboard: review queue, messages, switches, logs | FastAPI + HTML | 5 |
 | Docker + deployment guide | Docker / docker-compose | 6 |
 
 ## Safety defaults
@@ -138,7 +138,7 @@ is recorded with status `dry_run` and **no network call is made**. Every attempt
 `outbound_actions` (`sent` / `dry_run` / `blocked` / `failed`). The token is sent only in the
 `Authorization` header and is scrubbed from error messages.
 
-Review queue from the command line (until the dashboard exists):
+Review queue from the command line (same code path as the dashboard):
 
 ```bash
 python scripts/review.py list
@@ -155,6 +155,25 @@ sends the suggested private reply. Both still pass through the same gate and rul
 **Images:** put files in `media/` and set `PUBLIC_BASE_URL`; they are served publicly at
 `$PUBLIC_BASE_URL/media/<file>` so Instagram can fetch them. Any other public https image URL
 works too.
+
+## Dashboard (`/dashboard`)
+
+Set `DASHBOARD_PASSWORD` and `SESSION_SECRET_KEY` in `.env` (without a password the dashboard
+stays locked), start the app and open `http://127.0.0.1:8000/` (redirects to `/dashboard`).
+
+| Page | What you can do |
+| --- | --- |
+| Review queue | See each comment with intent, language, confidence and a low-confidence flag; edit the reply and the optional private-reply DM; **Approve reply**, **Approve reply + send DM** (disabled once the 7-day window has passed or the private reply was used) or **Reject**. A second tab lists drafts approved in dry run. |
+| Messages | People who DMed you, with the 24-hour window countdown. While it is open you can send a text DM or an image DM (a file from `media/` — needs `PUBLIC_BASE_URL` — or a public https link). |
+| Activity | Every outbound attempt from `outbound_actions` (`sent` / `dry_run` / `blocked` / `failed`, with the reason), filterable by status. |
+| Settings | Switches for review queue / automatic replies / automatic DMs and persona fields (creator name, persona, DM offer text, blocked words, emojis). Saved in the `app_settings` table, applied without a restart, `.env` values are the defaults. **`DRY_RUN` is shown read-only** — it can only be changed in `.env` + restart. |
+
+Security: single admin login (timing-safe check), signed `HttpOnly` / `SameSite=Lax` session
+cookie (`Secure` in production) that expires after 12 hours and is invalidated when the
+password changes, CSRF token on every form, login paused for 5 minutes after 5 wrong
+passwords, strict security headers (CSP, no framing, `no-store`). Secrets are never rendered.
+A banner on every page shows whether the app is in DRY RUN or LIVE mode. All buttons call the
+same `approve_draft` / `reject_draft` / `InstagramSender` code, so every Step 4 rule applies.
 
 ## Meta / Instagram setup
 
@@ -173,7 +192,9 @@ app/
   ai/         # prefilter, prompts, OpenAI/offline generators, draft pipeline
   instagram/  # Graph API client, safety-gated sender, image URL checks
   actions.py  # approve / reject drafts, automatic mode
-  main.py     # FastAPI app (/health)
+  runtime_settings.py  # dashboard-editable switches/persona layered over .env
+  dashboard/  # login, pages (Jinja2 templates), CSS
+  main.py     # FastAPI app (/health, /dashboard)
 scripts/      # local dev helpers (fake signed webhooks, show stored data)
 tests/        # pytest suite (no network, no real credentials)
 docs/         # setup guides
