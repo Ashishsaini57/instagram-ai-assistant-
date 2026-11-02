@@ -8,12 +8,13 @@ import logging
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.ai.pipeline import process_comments
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import Comment, CommentStatus, Message, WebhookEvent
@@ -51,7 +52,9 @@ def verify_subscription(
 
 
 @router.post("/webhook")
-async def receive_webhook(request: Request, settings: SettingsDep, db: DbDep) -> dict:
+async def receive_webhook(
+    request: Request, background: BackgroundTasks, settings: SettingsDep, db: DbDep
+) -> dict:
     content_length = request.headers.get("content-length")
     if content_length and content_length.isdigit() and int(content_length) > MAX_BODY_BYTES:
         raise HTTPException(status_code=413, detail="Payload too large")
@@ -71,13 +74,25 @@ async def receive_webhook(request: Request, settings: SettingsDep, db: DbDep) ->
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Invalid payload")
 
-    result = ingest_payload(db, payload, settings)
+    result, new_comment_ids = ingest_payload(db, payload, settings)
     logger.info("Webhook processed: %s", result)
+    if new_comment_ids and settings.ai_processing_enabled:
+        background.add_task(
+            process_comments,
+            request.app.state.session_factory,
+            settings,
+            request.app.state.reply_generator,
+            new_comment_ids,
+        )
     return {"status": "ok", **result}
 
 
-def ingest_payload(db: Session, payload: dict[str, Any], settings: Settings) -> dict[str, int]:
+def ingest_payload(
+    db: Session, payload: dict[str, Any], settings: Settings
+) -> tuple[dict[str, int], list[int]]:
+    """Store comments/messages. Returns counts and DB ids of new comments awaiting AI."""
     counts = {"comments": 0, "messages": 0, "duplicates": 0, "ignored": 0}
+    new_comments: list[Comment] = []
     entries = payload.get("entry") or []
 
     event = WebhookEvent(
@@ -95,9 +110,9 @@ def ingest_payload(db: Session, payload: dict[str, Any], settings: Settings) -> 
 
         for change in entry.get("changes") or []:
             if isinstance(change, dict) and change.get("field") == "comments":
-                _store(
-                    db, _comment_from_change(change.get("value") or {}, own_ids, event.id), counts
-                )
+                comment = _comment_from_change(change.get("value") or {}, own_ids, event.id)
+                if _store(db, comment, counts) and comment.status == CommentStatus.NEW:
+                    new_comments.append(comment)
             else:
                 counts["ignored"] += 1
 
@@ -111,26 +126,27 @@ def ingest_payload(db: Session, payload: dict[str, Any], settings: Settings) -> 
                 _store(db, message, counts)
 
     db.commit()
-    return counts
+    return counts, [c.id for c in new_comments]
 
 
-def _store(db: Session, row: Comment | Message | None, counts: dict[str, int]) -> None:
+def _store(db: Session, row: Comment | Message | None, counts: dict[str, int]) -> bool:
     if row is None:
         counts["ignored"] += 1
-        return
+        return False
     model = type(row)
     key_col = Comment.ig_comment_id if model is Comment else Message.ig_message_id
     key = row.ig_comment_id if isinstance(row, Comment) else row.ig_message_id
     if db.scalar(select(model.id).where(key_col == key)) is not None:
         counts["duplicates"] += 1
-        return
+        return False
     try:
         with db.begin_nested():
             db.add(row)
     except IntegrityError:
         counts["duplicates"] += 1
-        return
+        return False
     counts["comments" if model is Comment else "messages"] += 1
+    return True
 
 
 def _comment_from_change(value: dict[str, Any], own_ids: set[str], event_id: int) -> Comment | None:

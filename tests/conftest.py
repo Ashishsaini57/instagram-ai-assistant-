@@ -7,7 +7,18 @@ from fastapi.testclient import TestClient
 from app.config import Settings, get_settings
 from app.security import SIGNATURE_HEADER, compute_signature
 
-_PREFIXES = ("APP_", "META_", "INSTAGRAM_", "OPENAI_", "DASHBOARD_", "SESSION_")
+_PREFIXES = (
+    "APP_",
+    "META_",
+    "INSTAGRAM_",
+    "OPENAI_",
+    "DASHBOARD_",
+    "SESSION_",
+    "AI_",
+    "CREATOR_",
+    "REPLY_",
+    "DM_",
+)
 _EXACT = {
     "DRY_RUN",
     "REVIEW_QUEUE_ENABLED",
@@ -15,6 +26,7 @@ _EXACT = {
     "AUTO_DM_ENABLED",
     "LOG_LEVEL",
     "DATABASE_URL",
+    "BLOCKED_WORDS",
 }
 
 TEST_APP_SECRET = "test-app-secret"
@@ -30,6 +42,11 @@ def isolated_env(monkeypatch, tmp_path):
             monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'test.db'}")
+
+    def _no_real_openai(*args, **kwargs):
+        raise RuntimeError("Real OpenAI client must never be created in tests")
+
+    monkeypatch.setattr("app.ai.client.OpenAI", _no_real_openai)
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

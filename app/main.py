@@ -9,6 +9,7 @@ from fastapi import Depends, FastAPI
 from sqlalchemy.orm import sessionmaker
 
 from app import __version__
+from app.ai.client import get_reply_generator
 from app.config import Settings, get_settings
 from app.db import create_db_engine, init_db
 from app.webhooks import router as webhook_router
@@ -29,6 +30,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Instagram AI Assistant", version=__version__, lifespan=lifespan)
     app.state.engine = engine
     app.state.session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    app.state.reply_generator = get_reply_generator(settings)
     app.include_router(webhook_router)
 
     @app.get("/health")

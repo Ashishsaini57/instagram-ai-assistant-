@@ -131,7 +131,8 @@ def test_reel_comment_stored(client):
     assert c.from_id == "555"
     assert c.from_username == "fan_user"
     assert c.text == "बहुत बढ़िया! Love it"
-    assert c.status == CommentStatus.NEW
+    # Stored, then drafted in the background by the offline generator (no OpenAI key in tests).
+    assert c.status == CommentStatus.PENDING_REVIEW
     assert c.parent_comment_id is None
     assert c.event_id is not None
 
