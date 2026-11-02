@@ -4,8 +4,8 @@ AI-powered comment and DM automation for an Instagram **Creator** account, built
 **official Meta Instagram API** (Instagram API with Instagram Login) and webhooks. No unofficial
 login, scraping or password-based libraries are used.
 
-> **Status: Step 1 — project skeleton.** The app runs, loads configuration and exposes `/health`.
-> Webhooks, AI replies, DMs and the dashboard are added in later steps.
+> **Status: Step 2 — webhook receiver.** Signed Meta webhooks for comments and DMs are verified
+> and stored in SQLite. AI replies, sending, and the dashboard are added in later steps.
 
 ## Planned features
 
@@ -70,6 +70,37 @@ All settings come from environment variables (or a local `.env` file). See
   `SESSION_SECRET_KEY`, …) are masked in logs and never returned by any endpoint.
 - In production, set them through your host's secret manager instead of a file.
 
+## Webhook receiver
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /webhook` | Meta verification handshake: returns `hub.challenge` only if `hub.verify_token` matches `META_WEBHOOK_VERIFY_TOKEN`. |
+| `POST /webhook` | Receives events. Rejects (403, nothing stored) unless `X-Hub-Signature-256` is a valid HMAC-SHA256 of the raw body keyed by `META_APP_SECRET`. |
+
+Stored data (`app/models.py`):
+
+- `webhook_events` — audit log of every validly signed delivery.
+- `comments` — one row per comment (deduplicated by Instagram comment ID). Comments from your own
+  account are stored with status `ignored_self` so the bot never replies to itself.
+- `messages` — incoming DMs (deduplicated by message ID; echoes of your own messages are flagged),
+  used later for Instagram's 24-hour messaging window.
+
+### Try it locally with fake data (no Meta account needed)
+
+```bash
+# in .env — fake values only
+META_APP_SECRET=local-fake-secret
+META_WEBHOOK_VERIFY_TOKEN=local-fake-token
+
+uvicorn app.main:app --reload          # terminal 1
+python scripts/send_test_webhook.py --text "Price kya hai? 😍"     # terminal 2
+python scripts/send_test_webhook.py --dm --text "Hi, details please"
+python scripts/show_recent.py
+```
+
+`send_test_webhook.py` signs a sample payload with your local `META_APP_SECRET` and only posts to
+`localhost`.
+
 ## Meta / Instagram setup
 
 Not required yet. When you are ready to connect a real account, follow
@@ -80,7 +111,12 @@ Not required yet. When you are ready to connect a real account, follow
 ```
 app/
   config.py   # environment-based settings + safety validation
+  db.py       # SQLAlchemy engine/session
+  models.py   # webhook_events, comments, messages
+  security.py # webhook signature + verify-token checks
+  webhooks.py # GET/POST /webhook
   main.py     # FastAPI app (/health)
+scripts/      # local dev helpers (fake signed webhooks, show stored data)
 tests/        # pytest suite (no network, no real credentials)
 docs/         # setup guides
 ```
